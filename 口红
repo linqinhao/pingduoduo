@@ -1,0 +1,120 @@
+import requests
+import csv
+import time,threading
+from queue import Queue
+import pandas as pd
+
+targetUrl = "http://test.abuyun.com/proxy.php"
+
+
+proxies = {
+        "http"  : proxy,
+        "https" : proxy,
+    }
+
+def pdd():
+    file = open("pdd2.csv", "w", newline="", encoding="UTF-8")
+    writer = csv.writer(file)
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:55.0) Gecko/20100101 Firefox/55.0',
+               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+               'Accept-Language': 'zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3', 'Accept-Encoding': 'gzip,br,deflate',
+               'Connection': 'keep-alive', 'Upgrade-Insecure-Requests': '1'}
+
+    url = "http://apiv4.yangkeduo.com/v4/operation/505/groups?opt_type=2&offset={}&size=50&pdduid="
+    for i in range(20):
+        i *= 50
+        okurl = url.format(i)
+        res = requests.get(url=okurl,headers=headers).json()
+        goodlist = res["goods_list"]
+        for goods in goodlist:
+            id = goods["goods_id"]
+            name = goods["short_name"]
+            bin_price = goods["group"]["price"]
+            single_price = goods["normal_price"]
+            sell_count = goods["cnt"]
+            country = goods["country"]
+            img_url = goods["thumb_url"]
+            print(id,name,bin_price,single_price,sell_count,country,img_url)
+            writer.writerow([id,name,bin_price,single_price,sell_count,country,img_url])
+        time.sleep(1)
+    file.close()
+def open_csv():
+    data = open("pdd2.csv","r",newline="",encoding="utf-8")
+    reader = csv.reader(data)
+    id_list = set()
+    for i in reader:
+        if i[0] != "id":
+            id_list.add(i[0])
+    return id_list
+
+def open_csv2():
+    with open("pdd_fb.csv","r",encoding="utf-8",newline="") as data,open("pdd2.csv","r",encoding="utf-8") as data2:
+        reader = csv.reader(data)
+        reader1 = csv.reader(data2)
+        id_list = set()
+        id_list2 = set()
+        for i in reader1:
+            if i[0] != "id":
+                id_list2.add(i[0])
+        for i in reader:
+            if i[0] != "id":
+                id_list.add(i[0])
+        for i in id_list:
+            id_list2.remove(i)
+        return id_list2
+
+def pdd_fb():
+    id_list = open_csv2()
+    id_queue = Queue()
+    for id in id_list:
+        id_queue.put(id)
+    threads = []
+    while id_queue.qsize() != 0 or threads:
+        for thread in threads:
+            if not thread.is_alive():
+                threads.remove(thread)
+        while id_queue.qsize() != 0 and len(threads) < 10:
+            print(id_queue.qsize())
+            thread = threading.Thread(target=spider, args=[id_queue.get()])
+            thread.setDaemon(True)
+            thread.start()
+            threads.append(thread)
+            thread.join()
+
+def spider(id):
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:55.0) Gecko/20100101 Firefox/55.0',
+               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+               'Accept-Language': 'zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3', 'Accept-Encoding': 'gzip,br,deflate',
+               'Connection': 'keep-alive', 'Upgrade-Insecure-Requests': '1'}
+    url = "http://apiv4.yangkeduo.com/reviews/{}/list?page={}&size=20"
+    print(id)
+    for i in range(50):
+        newurl = url.format(id,i+1)
+        while 1:
+            try:
+                res = requests.get(url=newurl,headers=headers,proxies=proxies,timeout=5)
+            except:
+                print("request error")
+                continue
+            if res.status_code in range(200,300):
+                break
+            else:
+                print("status error!!!")
+                continue
+        res = res.json()
+        if len(res["data"]) == 0:
+            break
+        for i in res["data"]:
+            text = i["comment"]
+            time = i["time"]
+            try:
+                colr = eval(i["specs"])[0]["spec_value"]
+            except:
+                colr = None
+            writer.writerow([id,time,colr,text])
+
+if __name__ == "__main__":
+    file = open("pdd_fb3.csv","a",newline="",encoding="utf-8")
+    writer = csv.writer(file)
+    writer.writerow(["id","time","colr","text"])
+    pdd_fb()
